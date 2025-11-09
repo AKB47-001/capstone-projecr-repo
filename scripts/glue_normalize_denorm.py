@@ -5,7 +5,6 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.sql import functions as F
 
-
 # Adding support for handling runtime options
 args = getResolvedOptions(
     sys.argv,
@@ -15,20 +14,17 @@ SOURCE_PATH = args["SOURCE_PATH"]
 OUTPUT_S3   = args["OUTPUT_S3"].rstrip("/")
 
 # Performing the configuration part
-sc = SparkContext()
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-job = Job(glueContext)
+glueNormaliseSparkContextObject = SparkContext()
+normaliseGlueContext = GlueContext(glueNormaliseSparkContextObject)
+normaliseSpark = normaliseGlueContext.spark_session
+job = Job(normaliseGlueContext)
 job.init(args["JOB_NAME"], args)
-spark.sparkContext.setLogLevel("WARN")
+normaliseSpark.sparkContext.setLogLevel("WARN")
 
 # Starting to read data from the denormalised CSV file stored in S3
 print(f"Reading the Denormalised CSV file from location: {SOURCE_PATH}")
-df = (spark.read
-      .option("header", "true")
-      .option("multiLine", "true")
-      .option("escape", "\"")
-      .csv(SOURCE_PATH))
+df = (normaliseSpark.read.option("header", "true").option("multiLine", "true")
+      .option("escape", "\"").csv(SOURCE_PATH))
 print(f"Loaded All the Rows from the Denormalised CSV file. Total Row Count is: {df.count()}")
 df.printSchema()
 df.show(5, truncate=False)
@@ -93,17 +89,17 @@ for tableName, expectedColumns in TABLES.items():
         print(f"⚠️ Skipping {tableName}: none of the expected columns found!")
         continue
     # Extract those columns and drop duplicates
-    sub = df.select(*existing).dropDuplicates() 
+    nonDuplicateDF = df.select(*existing).dropDuplicates() 
     # Defining a date parsing pattern    
     DATE_PATTERN = "M/d/yyyy H:mm"   # matches "10/2/2017 10:56"
-    for c in sub.columns:
+    for c in nonDuplicateDF.columns:
         if any(k in c for k in ["timestamp", "date"]):
         # cast to string first, then parse explicitly
-            sub = sub.withColumn(c, F.to_timestamp(F.col(c).cast("string"), DATE_PATTERN))    
+            nonDuplicateDF = nonDuplicateDF.withColumn(c, F.to_timestamp(F.col(c).cast("string"), DATE_PATTERN))    
     # Writing normalized table to S3
     dest = f"{OUTPUT_S3}/{tableName}"
     print(f"Writing {tableName} → {dest}")
-    sub.write.mode("overwrite").parquet(dest)
+    nonDuplicateDF.write.mode("overwrite").parquet(dest)
 
 print("We have successfully completed the Normalisation of the Data")
 job.commit()
