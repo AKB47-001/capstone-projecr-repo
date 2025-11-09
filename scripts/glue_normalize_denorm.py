@@ -86,7 +86,7 @@ for tableName, expectedColumns in TABLES.items():
     # Check which expected columns exist
     existing = [column for column in expectedColumns if column in df.columns]
     if not existing:
-        print(f"⚠️ Skipping {tableName}: none of the expected columns found!")
+        print(f"Skipping {tableName}: none of the expected columns found!")
         continue
     # Extract those columns and drop duplicates
     nonDuplicateDF = df.select(*existing).dropDuplicates() 

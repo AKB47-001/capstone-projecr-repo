@@ -26,32 +26,33 @@ def safe_read(name):
     path = f"{RAW}/{name}"
     try:
         df = cleanSpark.read.parquet(path)
-        print(f"📥 Loaded {name} from {path} ({df.count()} rows)")
+        print(f"Loaded {name} from {path} ({df.count()} rows)")
         return df
     except AnalysisException as e:
-        print(f"⚠️ Missing table {name}: {e.desc}")
+        print(f"Missing table {name}: {e.desc}")
         return None
     except Exception as e:
-        print(f"⚠️ Could not read {name}: {e}")
+        print(f"Could not read {name}: {e}")
         return None
 
 # Helper Functions to write data to s3 bucket.
 def safe_write(df, name):
     if df is None:
-        print(f"⚠️ Skipping write for {name}")
+        print(f"Skipping write for {name}")
         return
     dest = f"{PRE}/{name}"
     df.write.mode("overwrite").parquet(dest)
-    print(f"✅ Saved {name} → {dest} ({df.count()} rows)")
+    print(f"Saved {name} → {dest} ({df.count()} rows)")
 
-# ============================================================
-# 1️⃣ ORDERS (verified timestamp fix)
-# ============================================================
-orders = safe_read("orders")
-if orders is not None:
-    print("🧹 Cleaning orders table...")
 
-    date_cols = [
+# ------------------------------------------------
+# Cleaning the Orders Table Data - Preprocessing
+# ------------------------------------------------
+orders_df  = safe_read("orders")
+if orders_df is not None:
+    print("Cleaning the ORDERS table.....")
+    # Array of the columns with timestamps values
+    timestamp_columns = [
         "order_purchase_timestamp",
         "order_approved_at",
         "order_delivered_carrier_date",
@@ -59,200 +60,202 @@ if orders is not None:
         "order_estimated_delivery_date",
     ]
 
-    for c in date_cols:
-        if c in orders.columns:
-            dtype = [d for d in orders.dtypes if d[0] == c][0][1]
-
-            # Case 1: epoch milliseconds (long)
+    # Converting timestamps to valid Spark TimestampType
+    for col_name in timestamp_columns:
+        if col_name in orders_df.columns:
+            dtype = [d for d in orders_df.dtypes if d[0] == col_name][0][1]
+            # Case 1: epoch milliseconds (integer type)
             if dtype in ("bigint", "long", "int"):
-                orders = orders.withColumn(
-                    c, F.from_unixtime((F.col(c) / 1000).cast("long")).cast("timestamp")
+                orders_df = orders_df.withColumn(
+                    col_name, F.from_unixtime((F.col(col_name) / 1000).cast("long")).cast("timestamp")
                 )
-                print(f"✅ Converted {c} from epoch → timestamp")
-
-            # Case 2: string (M/d/yyyy H:mm)
+                print(f"✅ Converted {col_name} from epoch → timestamp")
+            # Case 2: string format like "M/d/yyyy H:mm"
             elif dtype == "string":
-                orders = orders.withColumn(
-                    c, F.to_timestamp(F.col(c), "M/d/yyyy H:mm")
+                orders_df = orders_df.withColumn(
+                    col_name, F.to_timestamp(F.col(col_name), "M/d/yyyy H:mm")
                 )
-                print(f"✅ Parsed {c} from string → timestamp")
-
+                print(f"✅ Parsed {col_name} from string → timestamp")
             # Case 3: already timestamp
             elif dtype == "timestamp":
-                print(f"⏱️ {c} already timestamp")
-
+                print(f"⏱️ {col_name} already timestamp")
+            # Fallback: generic cast
             else:
-                # fallback generic cast
-                orders = orders.withColumn(
-                    c, F.from_unixtime(F.col(c).cast("long")).cast("timestamp")
+                orders_df = orders_df.withColumn(
+                    col_name, F.from_unixtime(F.col(col_name).cast("long")).cast("timestamp")
                 )
-                print(f"⚙️ Fallback cast for {c} ({dtype}) → timestamp")
+                print(f"⚙️ Fallback cast for {col_name} ({dtype}) → timestamp")
 
-    # Remove impossible timeline rows
-    cond_invalid = (
+    
+    # Droping rows with impossible delivery timelines
+    invalid_timeline = (
         (F.col("order_approved_at") < F.col("order_purchase_timestamp")) |
         (F.col("order_delivered_carrier_date") < F.col("order_approved_at")) |
         (F.col("order_delivered_customer_date") < F.col("order_delivered_carrier_date")) |
         (F.col("order_estimated_delivery_date") < F.col("order_purchase_timestamp"))
     )
-    invalid_orders = orders.filter(cond_invalid)
-    print(f"⚠️ Invalid orders dropped: {invalid_orders.count()}")
-    orders = orders.subtract(invalid_orders).dropDuplicates(["order_id"])
-
-    # Force all timestamps to real Spark TIMESTAMP type
-    exprs = [
-        f"CAST({c} AS TIMESTAMP) AS {c}" if c in date_cols else c
-        for c in orders.columns
-    ]
-    orders_final = orders.selectExpr(*exprs)
-
-    # ✅ Parquet writer settings to preserve timestamp type
+    invalid_rows = orders_df.filter(invalid_timeline)
+    print(f"Invalid orders dropped: {invalid_rows.count()}")
+    orders_df = orders_df.subtract(invalid_rows).dropDuplicates(["order_id"])
+    # Ensure all date fields are cast properly
+    exprs = [f"CAST({c} AS TIMESTAMP) AS {c}" if c in timestamp_columns else c for c in orders_df.columns]
+    orders_cleaned = orders_df.selectExpr(*exprs)
+    # Setting timestamp writing behavior
     cleanSpark.conf.set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
     cleanSpark.conf.set("spark.sql.session.timeZone", "UTC")
-
-    dest = f"{PRE}/orders"
-    orders_final.write.mode("overwrite") \
+    # Save cleaned orders table
+    destination = f"{PRE}/orders"
+    orders_cleaned.write.mode("overwrite") \
         .option("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS") \
         .option("compression", "snappy") \
-        .parquet(dest)
+        .parquet(destination)
+    print(f"Orders written with correct TIMESTAMP columns → {destination}")
 
-    print(f"✅ Orders written with correct TIMESTAMP columns → {dest}")
 
-# ============================================================
-# 2️⃣ ORDER ITEMS
-# ============================================================
-items = safe_read("order_items")
-if items is not None:
-    items = items.filter((F.col("price") > 0) & (F.col("freight_value") >= 0))
-    if "shipping_limit_date" in items.columns:
-        items = items.withColumnRenamed("shipping_limit_date", "shipping_deadline")
-        items = items.withColumn("shipping_deadline", F.to_timestamp("shipping_deadline"))
-    safe_write(items, "order_items")
+# -----------------------------------------------------
+# Cleaning the Order Items Table Data - Preprocessing
+# -----------------------------------------------------
+order_items_df  = safe_read("order_items")
+if order_items_df is not None:
+    # Removing rows with non-positive prices or negative freight values.
+    order_items_df = order_items_df.filter((F.col("price") > 0) & (F.col("freight_value") >= 0))
+    if "shipping_limit_date" in order_items_df.columns:
+        # Renamed column to shipping_deadline for clarity.
+        order_items_df  = order_items_df.withColumnRenamed("shipping_limit_date", "shipping_deadline")
+        # Converted shipping_limit_date to TimeStamp
+        order_items_df = order_items_df.withColumn("shipping_deadline", F.to_timestamp("shipping_deadline"))
+    # Writing Data
+    safe_write(order_items_df, "order_items")
 
-# ============================================================
-# 3️⃣ ORDER PAYMENTS
-# ============================================================
-pays = safe_read("order_payments")
-if pays is not None:
-    pays = pays.withColumn(
+
+# -----------------------------------------------------
+# Cleaning the Order Payments Table Data - Preprocessing
+# -----------------------------------------------------
+payments_df = safe_read("order_payments")
+if payments_df is not None:
+    # Normalized payment type names (e.g., boleto → bank slip)
+    payments_df = payments_df.withColumn(
         "payment_type",
-        F.when(F.col("payment_type") == "boleto", "bank_slip")
-         .otherwise(F.col("payment_type"))
+        F.when(F.col("payment_type") == "boleto", "bank_slip").otherwise(F.col("payment_type"))
     )
-    pays = pays.filter(F.col("payment_type") != "not_defined")
-    safe_write(pays, "order_payments")
+    # Remove undefined payment types
+    payments_df = payments_df.filter(F.col("payment_type") != "not_defined")
+    # Writing Data
+    safe_write(payments_df, "order_payments")
 
-# ============================================================
-# 4️⃣ ORDER REVIEWS
-# ============================================================
-reviews = safe_read("order_reviews")
-if reviews is not None:
-    for c in ["review_creation_date", "review_answer_timestamp"]:
-        if c in reviews.columns:
-            reviews = reviews.withColumn(c, F.to_timestamp(F.col(c)))
-    reviews = reviews.filter(F.col("review_id").isNotNull())
-    before = reviews.count()
-    reviews = reviews.dropDuplicates(["review_id"])
-    after = reviews.count()
+
+# -----------------------------------------------------
+# Cleaning the Order Reviews Table Data - Preprocessing
+# -----------------------------------------------------
+reviews_df = safe_read("order_reviews")
+if reviews_df is not None:
+    # Convert review timestamps
+    for col_name in ["review_creation_date", "review_answer_timestamp"]:
+        if col_name in reviews_df.columns:
+            reviews_df = reviews_df.withColumn(col_name, F.to_timestamp(F.col(col_name)))
+    # Removing missing or duplicate reviews
+    reviews_df = reviews_df.filter(F.col("review_id").isNotNull())
+    before = reviews_df.count()
+    reviews_df = reviews_df.dropDuplicates(["review_id"])
+    after = reviews_df.count()
     print(f"🧹 Cleaned reviews: removed {before - after} duplicates")
-    safe_write(reviews, "order_reviews")
+    # Writing Data
+    safe_write(reviews_df, "order_reviews")
 
-# ============================================================
-# 5️⃣ PRODUCTS
-# ============================================================
-products = safe_read("products")
-if products is not None:
-    # fix typos + ensure length columns exist
+# -----------------------------------------------------
+# Cleaning the Products Table Data - Preprocessing
+# -----------------------------------------------------
+products_df = safe_read("products")
+if products_df is not None:
+    # Fix column name typos product_name_lenght -> product_name_length
     rename_map = {
         "product_name_lenght": "product_name_length",
         "product_description_lenght": "product_description_length",
     }
     for old, new in rename_map.items():
-        if old in products.columns:
-            products = products.withColumnRenamed(old, new)
-        elif new not in products.columns:
-            products = products.withColumn(new, F.lit(None).cast("double"))
+        if old in products_df.columns:
+            products_df = products_df.withColumnRenamed(old, new)
+        elif new not in products_df.columns:
+            products_df = products_df.withColumn(new, F.lit(None).cast("double"))
 
-    if "product_category_name" in products.columns:
-        products = products.filter(F.col("product_category_name").isNotNull())
+    # Droping products with missing category names
+    if "product_category_name" in products_df.columns:
+        products_df = products_df.filter(F.col("product_category_name").isNotNull())
 
-    # fill numeric fields with median values
-    num_cols = [
-        "product_weight_g", "product_length_cm",
-        "product_height_cm", "product_width_cm"
-    ]
-    for c in num_cols:
-        if c in products.columns:
-            products = products.withColumn(c, F.col(c).cast(DoubleType()))
-            non_null = products.filter(F.col(c).isNotNull())
+    # Fill missing numeric attributes (weight, dimensions) with median values
+    numeric_columns = ["product_weight_g", "product_length_cm", "product_height_cm", "product_width_cm"]
+    for col_name in numeric_columns:
+        if col_name in products_df.columns:
+            products_df = products_df.withColumn(col_name, F.col(col_name).cast(DoubleType()))
+            non_null = products_df.filter(F.col(col_name).isNotNull())
             if non_null.count() > 0:
-                med = non_null.approxQuantile(c, [0.5], 0.01)[0]
-                products = products.na.fill({c: float(med)})
-            products = products.filter(F.col(c) > 0)
+                median_value = non_null.approxQuantile(col_name, [0.5], 0.01)[0]
+                products_df = products_df.na.fill({col_name: float(median_value)})
+            products_df = products_df.filter(F.col(col_name) > 0)
+    # Writing Data
+    safe_write(products_df, "products")
 
-    safe_write(products, "products")
 
-# ============================================================
-# 6️⃣ PRODUCT CATEGORY TRANSLATION
-# ============================================================
-prod_cat = safe_read("product_category_name_translation")
-if prod_cat is not None:
-    prod_cat = prod_cat.dropDuplicates(["product_category_name"])
-    add_rows = [
+# -----------------------------------------------------
+# Cleaning the Product Category Table Data - Preprocessing
+# -----------------------------------------------------
+translations_df = safe_read("product_category_name_translation")
+if translations_df is not None:
+    translations_df = translations_df.dropDuplicates(["product_category_name"])
+    # Add missing translation rows
+    extra_rows = [
         ("portateis_cozinha_e_preparadores_de_alimentos", "portable_kitchen_and_food_preparers"),
         ("pc_gamer", "pc_gamer"),
     ]
-    add_df = cleanSpark.createDataFrame(add_rows, ["product_category_name", "product_category_name_english"])
-    prod_cat = prod_cat.unionByName(add_df, allowMissingColumns=True).dropDuplicates(["product_category_name"])
-    safe_write(prod_cat, "product_category_name_translation")
+    extra_df = cleanSpark.createDataFrame(extra_rows, ["product_category_name", "product_category_name_english"])
+    translations_df = translations_df.unionByName(extra_df, allowMissingColumns=True).dropDuplicates(["product_category_name"])
+    # Writing Data
+    safe_write(translations_df, "product_category_name_translation")
 
-# ============================================================
-# 7️⃣ SELLERS
-# ============================================================
-sellers = safe_read("sellers")
-if sellers is not None:
+# -----------------------------------------------------
+# Cleaning the Sellers Table Data - Preprocessing
+# -----------------------------------------------------
+sellers_df = safe_read("sellers")
+if sellers_df is not None:
+    # UDF to remove accent marks from city names
     @F.udf(StringType())
     def strip_accents(text):
         if text is None:
             return None
-        return ''.join(
-            c for c in unicodedata.normalize('NFKD', str(text))
-            if not unicodedata.combining(c)
-        )
-
-    sellers = sellers.dropDuplicates(["seller_id"]).filter(F.col("seller_id").isNotNull())
-    if "seller_city" in sellers.columns:
-        sellers = sellers.withColumn("seller_city", F.lower(F.trim(F.col("seller_city"))))
-        sellers = sellers.withColumn("seller_city", strip_accents("seller_city"))
-
-        replacements = {
-            "sao miguel": "sao miguel d'oeste",
-            "sao pau": "sao paulo",
-        }
+        return ''.join(c for c in unicodedata.normalize('NFKD', str(text)) if not unicodedata.combining(c))
+    # Droping duplicate and null seller IDs
+    sellers_df = sellers_df.dropDuplicates(["seller_id"]).filter(F.col("seller_id").isNotNull())
+    # Cleaning city names
+    if "seller_city" in sellers_df.columns:
+        sellers_df = sellers_df.withColumn("seller_city", F.lower(F.trim(F.col("seller_city"))))
+        sellers_df = sellers_df.withColumn("seller_city", strip_accents("seller_city"))
+        # Fixing common misspellings
+        replacements = {"sao miguel": "sao miguel d'oeste", "sao pau": "sao paulo"}
         for wrong, correct in replacements.items():
-            sellers = sellers.withColumn(
+            sellers_df = sellers_df.withColumn(
                 "seller_city",
-                F.when(F.col("seller_city").contains(wrong), correct)
-                 .otherwise(F.col("seller_city"))
+                F.when(F.col("seller_city").contains(wrong), correct).otherwise(F.col("seller_city"))
             )
-    safe_write(sellers, "sellers")
+    # Writing Data
+    safe_write(sellers_df, "sellers")
 
-# ============================================================
-# 8️⃣ CUSTOMERS + GEOLOCATION
-# ============================================================
-cust = safe_read("customers")
-if cust is not None:
-    cust = cust.dropDuplicates(["customer_id"]).filter(F.col("customer_id").isNotNull())
-    safe_write(cust, "customers")
+# -----------------------------------------------------
+# Cleaning the Customers and Geolocation Table Data - Preprocessing
+# -----------------------------------------------------
+customers_df = safe_read("customers")
+if customers_df is not None:
+    customers_df = customers_df.dropDuplicates(["customer_id"]).filter(F.col("customer_id").isNotNull())
+    safe_write(customers_df, "customers")
 
-geo = safe_read("geolocation")
-if geo is not None:
-    geo = geo.dropDuplicates(["geolocation_zip_code_prefix", "geolocation_lat", "geolocation_lng"])
-    geo = geo.filter(
+geo_df = safe_read("geolocation")
+if geo_df is not None:
+    geo_df = geo_df.dropDuplicates(["geolocation_zip_code_prefix", "geolocation_lat", "geolocation_lng"])
+    geo_df = geo_df.filter(
         (F.col("geolocation_lat").between(-90, 90)) &
         (F.col("geolocation_lng").between(-180, 180))
     )
-    safe_write(geo, "geolocation")
+    safe_write(geo_df, "geolocation")
 
-print("\n🎉 Cleaning job completed successfully (Final Version).")
+# Finally printing the complete status
+print("\nCleaning job completed successfully!!!!")
 job.commit()
