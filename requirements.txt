@@ -1,0 +1,25 @@
+# Core AWS SDKs
+# pip install -r requirements.txt
+boto3==1.35.9
+botocore==1.35.9
+
+# Data processing
+pandas==2.2.3
+numpy==1.26.4
+pyarrow==17.0.0
+
+# Visualization
+plotly==5.24.1
+matplotlib==3.9.2
+
+# Machine Learning
+scikit-learn==1.5.2
+
+# Utilities
+seaborn==0.13.2
+joblib==1.4.2
+tqdm==4.66.5
+
+# Optional (used in some Glue/Athena environments)
+s3fs==2024.6.1
+awswrangler==3.10.0
