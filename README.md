@@ -9,7 +9,7 @@
 
 
 <p align="center">
-  <img width="1024" height="1536" alt="ArchitectureImage" src="https://github.com/user-attachments/assets/edced33e-f614-4b73-b92f-4b88a4e37a4e" />
+  <img width="512" height="768" alt="ArchitectureImage" src="https://github.com/user-attachments/assets/edced33e-f614-4b73-b92f-4b88a4e37a4e" />
 </p>
 **Figure:** High-level AWS architecture showing S3 data lake, Glue ETL jobs, Athena analytics,  
 and ML dashboard generation pipeline.
@@ -191,7 +191,6 @@ aws-etl-pipeline/
 │   ├── olist_ml_dashboard.html
 │   └── models/
 ├── requirements.txt
-├── requirements_resolved.txt
 └── README.md
 ```
 
@@ -227,7 +226,7 @@ aws-etl-pipeline/
 
 ## 🧑‍💻 Authors & Acknowledgments
 
-**Developed by:** Group G16 – IIT Jodhpur Capstone Project  
+**Developed by:** Group G16 – Ankit, Sarthak, Kaushal, Saransh
 **Mentors:** *[Add Faculty / Industry Mentor Names]*  
 **Dataset:** [Olist Brazilian E-Commerce Dataset (Kaggle)](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
 
