@@ -172,26 +172,28 @@ This single command will:
 ## 📂 Project Structure
 
 ```text
-aws-etl-pipeline/
+salesMLCapstoneProject/
 ├── config/
-│   └── config.json
+│   └── config.json                  # S3 paths, Glue role, bucket, crawler, database
 ├── scripts/
-│   ├── glue_normalize_denorm.py
-│   ├── glue_understand_tables.py
-│   ├── glue_clean_tables.py
-│   ├── glue_wrangle_data.py
-│   ├── athena_eda_runner.py
-│   ├── build_html_dashboard.py
-│   ├── run_ml_model.py
-│   ├── run_ml_model_enhanced.py
-│   └── run_full_pipeline.py
-├── data/
+│   ├── glue_normalize_denorm.py     # Step 1 - Normalize
+│   ├── glue_understand_tables.py    # Step 2 - Inspect tables
+│   ├── glue_clean_tables.py         # Step 3 - Clean data
+│   ├── glue_wrangle_data.py         # Step 4 - Merge & wrangle
+│   ├── athena_eda_runner.py         # Step 5 - Athena EDA queries
+│   ├── build_html_dashboard.py      # Step 6 - EDA dashboard
+│   ├── run_ml_model.py              # Step 7 - Base ML (LogReg, RF)
+│   ├── run_ml_model_enhanced.py     # Step 8 - Enhanced ML (GB, SVC, metrics)
+│           
+├── data/                            # Cached wrangled dataset
 ├── output/
-│   ├── olist_eda_dashboard.html
-│   ├── olist_ml_dashboard.html
-│   └── models/
+│   ├── olist_eda_dashboard.html     # EDA dashboard
+│   ├── olist_ml_dashboard.html      # Enhanced ML dashboard
+│   └── models/                      # Trained models + scaler
 ├── requirements.txt
+├── run_full_pipeline.py             # Master orchestrator
 └── README.md
+
 ```
 
 ---
