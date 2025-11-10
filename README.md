@@ -13,7 +13,7 @@ The pipeline combines **data engineering (ETL)**, **data analytics (Athena EDA)*
 into a single automated workflow.
 
 
-🧱 AWS Components Used
+## 🧱 AWS Components Used
 
 | Component              | Purpose                                                                 |
 | ---------------------- | ----------------------------------------------------------------------- |
@@ -25,6 +25,21 @@ into a single automated workflow.
 | **AWS Wrangler**       | Pandas ↔ Athena data transfer helper                                    |
 | **Plotly + Bootstrap** | Interactive HTML dashboards                                             |
 | **scikit-learn**       | Machine learning and model evaluation                                   |
+
+## 🧰 Tech Stack
+
+| Category | Technologies |
+|-----------|---------------|
+| **Language** | Python 3.12+ |
+| **Data Engineering** | PySpark (AWS Glue), AWS Glue Crawler |
+| **Data Storage** | Amazon S3 (Raw → Normalized → Preprocessed → Wrangled Layers) |
+| **Data Analytics** | AWS Athena, AWS Wrangler |
+| **Visualization** | Plotly, Bootstrap, Matplotlib, Seaborn |
+| **Machine Learning** | scikit-learn, joblib |
+| **AWS SDKs** | boto3, botocore |
+| **Utilities** | pandas, numpy |
+| **Deployment** | AWS Glue ETL Jobs, Athena Workgroup, S3 Dashboards |
+
 
 
 
