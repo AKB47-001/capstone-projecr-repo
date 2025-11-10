@@ -41,66 +41,18 @@ into a single automated workflow.
 | **Deployment** | AWS Glue ETL Jobs, Athena Workgroup, S3 Dashboards |
 
 
-⚙️ Setup Instructions
-1️⃣ Clone the Repository
+
+## ⚙️ Setup Instructions
+
+### 1️⃣ Clone the Repository
+```bash
 git clone https://github.com/<your-username>/aws-etl-ecommerce-pipeline.git
 cd aws-etl-ecommerce-pipeline
 
-2️⃣ Create a Virtual Environment
+### 2️⃣ **Create a Virtual Environment**
 python -m venv venv
 
 
-Activate it:
-
-Windows (PowerShell)
-
-venv\Scripts\activate
-
-
-macOS/Linux
-
-source venv/bin/activate
-
-3️⃣ Upgrade pip and Tooling
-pip install --upgrade pip setuptools wheel
-
-4️⃣ Install Dependencies
-pip install -r requirements_resolved.txt
-
-
-(Or use requirements.txt if requirements_resolved.txt is unavailable.)
-
-5️⃣ Configure AWS Credentials
-
-Ensure your environment has valid AWS credentials with access to:
-
-The S3 bucket defined in config/config.json
-
-AWS Glue and Athena services
-
-IAM role AWSGlueServiceRole-ETL
-
-Check your identity:
-
-aws sts get-caller-identity
-
-6️⃣ Run the Full Pipeline
-python scripts/run_full_pipeline.py
-
-
-This single command will:
-
-Execute all AWS Glue ETL jobs sequentially
-
-Catalog the wrangled data using AWS Glue Crawler
-
-Run Athena queries for EDA
-
-Generate the EDA dashboard
-
-Train baseline and enhanced ML models
-
-Produce two dashboards under output/
 
 
 
